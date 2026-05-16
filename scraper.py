@@ -1,10 +1,11 @@
+import re
 import time
 import requests
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from bs4 import BeautifulSoup
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom.minidom import parseString
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import urlencode, urlparse, urlunparse, parse_qs
 
 AFFILIATE_PARAMS = {
     'mkcid': '1',
@@ -17,81 +18,75 @@ AFFILIATE_PARAMS = {
 }
 
 HEADERS = {
-    'User-Agent': (
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-        'AppleWebKit/537.36 (KHTML, like Gecko) '
-        'Chrome/124.0.0.0 Safari/537.36'
-    ),
-    'Accept-Language': 'en-US,en;q=0.9',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
 }
 
 SEARCHES = [
-    ('NES',          'NES game cartridge',       40),
-    ('SNES',         'SNES game cartridge',       45),
-    ('N64',          'Nintendo 64 game',          50),
-    ('PS1',          'PS1 PlayStation game',      30),
-    ('PS2',          'PS2 PlayStation 2 game',    25),
-    ('Sega Genesis', 'Sega Genesis game',         30),
-    ('Sega Saturn',  'Sega Saturn game',          50),
-    ('Dreamcast',    'Sega Dreamcast game',       40),
-    ('Game Boy',     'Game Boy game cartridge',   30),
-    ('GBA',          'Game Boy Advance game',     35),
-    ('Nintendo DS',  'Nintendo DS game',          20),
+    'retro game ebay',
+    'NES game ebay',
+    'SNES game ebay',
+    'Nintendo 64 ebay',
+    'PS1 PlayStation ebay',
+    'PS2 PlayStation ebay',
+    'Sega Genesis ebay',
+    'Dreamcast ebay',
+    'Game Boy ebay',
+    'Game Boy Advance ebay',
+    'Nintendo DS ebay',
 ]
 
 
-def make_affiliate_link(url):
-    parsed = urlparse(url)
+def make_affiliate_link(ebay_url):
+    parsed = urlparse(ebay_url)
     clean = urlunparse(parsed._replace(query='', fragment=''))
     return clean + '?' + urlencode(AFFILIATE_PARAMS)
 
 
-def scrape_ebay(keyword, max_price):
-    params = {
-        '_nkw': keyword,
-        '_sop': '10',
-        'LH_BIN': '1',
-        '_udhi': str(max_price),
-    }
-    url = 'https://www.ebay.com/sch/i.html?' + urlencode(params)
-
+def get_ebay_url_from_slickdeals(deal_url):
+    """Fetch Slickdeals deal page, find click URL, follow redirect to eBay."""
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
+        r = requests.get(deal_url, headers=HEADERS, timeout=10)
+        click_urls = re.findall(r'https://slickdeals\.net/click\?[^"\'<\s]+', r.text)
+        if not click_urls:
+            return None
+
+        click_url = click_urls[0].replace('&amp;', '&')
+        redirect = requests.get(click_url, headers=HEADERS, timeout=10, allow_redirects=False)
+        location = redirect.headers.get('Location', '')
+
+        if 'ebay.com/itm/' in location:
+            return make_affiliate_link(location)
     except Exception as e:
-        print(f'  Error: {e}')
+        print(f'    Error: {e}')
+    return None
+
+
+def fetch_slickdeals(query):
+    url = f'https://slickdeals.net/newsearch.php?q={requests.utils.quote(query)}&searcharea=deals&searchin=first_word&rss=1'
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        r.raise_for_status()
+    except Exception as e:
+        print(f'  RSS fetch error: {e}')
         return []
 
-    soup = BeautifulSoup(resp.text, 'html.parser')
+    root = ET.fromstring(r.text)
     results = []
 
-    for item in soup.select('li.s-item'):
-        try:
-            title_el = item.select_one('.s-item__title')
-            price_el = item.select_one('.s-item__price')
-            link_el  = item.select_one('a.s-item__link')
-            cond_el  = item.select_one('.SECONDARY_INFO')
+    for item in root.findall('.//item'):
+        title = item.findtext('title', '').strip()
+        link  = item.findtext('link', '').strip()
+        desc  = item.findtext('description', '')
+        pub   = item.findtext('pubDate', '')
 
-            if not (title_el and price_el and link_el):
-                continue
-            title = title_el.get_text(strip=True)
-            if title.lower() == 'shop on ebay':
-                continue
-
-            price_text = price_el.get_text(strip=True).replace(',', '').split(' to ')[0]
-            price = float(''.join(c for c in price_text if c.isdigit() or c == '.'))
-
-            raw_url   = link_el['href'].split('?')[0]
-            condition = cond_el.get_text(strip=True) if cond_el else 'Used'
-
-            results.append({
-                'title':     title[:100],
-                'price':     price,
-                'url':       make_affiliate_link(raw_url),
-                'condition': condition,
-            })
-        except Exception:
+        if 'ebay' not in title.lower() and 'ebay' not in desc.lower():
             continue
+
+        results.append({
+            'title':   title,
+            'link':    link,
+            'pubDate': pub,
+        })
 
     return results
 
@@ -102,41 +97,54 @@ def build_rss(all_deals):
 
     rss     = Element('rss', version='2.0')
     channel = SubElement(rss, 'channel')
-    SubElement(channel, 'title').text       = 'Retro Gaming eBay Deals'
-    SubElement(channel, 'link').text        = 'https://www.ebay.com'
-    SubElement(channel, 'description').text = 'Daily retro gaming deals from eBay with affiliate links'
-    SubElement(channel, 'language').text    = 'en-us'
+    SubElement(channel, 'title').text        = 'Retro Gaming eBay Deals'
+    SubElement(channel, 'link').text         = 'https://www.ebay.com'
+    SubElement(channel, 'description').text  = 'Daily retro gaming eBay deals via Slickdeals with affiliate links'
+    SubElement(channel, 'language').text     = 'en-us'
     SubElement(channel, 'lastBuildDate').text = pub_date
 
-    for label, items in all_deals.items():
-        for deal in sorted(items, key=lambda x: x['price'])[:5]:
-            el = SubElement(channel, 'item')
-            SubElement(el, 'title').text       = f'[{label}] ${deal["price"]:.2f} — {deal["title"]}'
-            SubElement(el, 'link').text        = deal['url']
-            SubElement(el, 'guid', isPermaLink='true').text = deal['url']
-            SubElement(el, 'pubDate').text     = pub_date
-            SubElement(el, 'description').text = (
-                f'<b>${deal["price"]:.2f}</b> | {deal["condition"]}<br/>'
-                f'<a href="{deal["url"]}">{deal["title"]}</a>'
-            )
+    seen = set()
+    for deal in all_deals:
+        url = deal.get('ebay_url') or deal['link']
+        if url in seen:
+            continue
+        seen.add(url)
+
+        el = SubElement(channel, 'item')
+        SubElement(el, 'title').text        = deal['title']
+        SubElement(el, 'link').text         = url
+        SubElement(el, 'guid', isPermaLink='true').text = url
+        SubElement(el, 'pubDate').text      = deal.get('pubDate', pub_date)
+        SubElement(el, 'description').text  = (
+            f'<a href="{url}">{deal["title"]}</a>'
+        )
 
     return parseString(tostring(rss, encoding='unicode')).toprettyxml(indent='  ')
 
 
 def main():
-    all_deals = {}
-    for label, keyword, max_price in SEARCHES:
-        print(f'Searching {label}...')
-        items = scrape_ebay(keyword, max_price)
-        print(f'  {len(items)} items found')
-        if items:
-            all_deals[label] = items
+    all_deals = []
+
+    for query in SEARCHES:
+        print(f'Searching: {query}')
+        deals = fetch_slickdeals(query)
+        print(f'  {len(deals)} eBay deals found')
+
+        for deal in deals:
+            print(f'  Getting eBay URL: {deal["title"][:60]}')
+            ebay_url = get_ebay_url_from_slickdeals(deal['link'])
+            deal['ebay_url'] = ebay_url
+            if ebay_url:
+                print(f'    Got: {ebay_url[:80]}')
+            all_deals.append(deal)
+            time.sleep(1)
+
         time.sleep(2)
 
     xml = build_rss(all_deals)
     with open('feed.xml', 'w', encoding='utf-8') as f:
         f.write(xml)
-    print(f'Done — {sum(len(v) for v in all_deals.values())} total deals written to feed.xml')
+    print(f'\nDone — {len(all_deals)} deals written to feed.xml')
 
 
 if __name__ == '__main__':

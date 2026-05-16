@@ -16,7 +16,11 @@
       "Bash(Select-String -Pattern \"Raw HTML|s-item count|Fetch error|Searching|Found\")",
       "Bash(Select-Object -First 40)",
       "Bash(git pull *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(pip install *)",
+      "Bash(python -c \"from curl_cffi import requests; r = requests.get\\('https://www.ebay.com/sch/i.html?_nkw=NES+game&LH_BIN=1&_udhi=40', impersonate='chrome124', timeout=15\\); print\\(r.status_code\\); print\\('s-item' in r.text\\)\")",
+      "Bash(playwright install *)",
+      "PowerShell(python -m playwright install chromium 2>&1)"
     ]
   }
 }
