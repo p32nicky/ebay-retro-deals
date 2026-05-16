@@ -1,5 +1,5 @@
 import time
-import requests
+from curl_cffi import requests
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from xml.etree.ElementTree import Element, SubElement, tostring
@@ -14,15 +14,6 @@ AFFILIATE_PARAMS = {
     'customid': '',
     'toolid': '10001',
     'mkevt': '1',
-}
-
-HEADERS = {
-    'User-Agent': (
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-        'AppleWebKit/537.36 (KHTML, like Gecko) '
-        'Chrome/124.0.0.0 Safari/537.36'
-    ),
-    'Accept-Language': 'en-US,en;q=0.9',
 }
 
 # (label, search keyword, max price USD)
@@ -57,7 +48,7 @@ def scrape_ebay(keyword, max_price):
     url = 'https://www.ebay.com/sch/i.html?' + urlencode(params)
 
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp = requests.get(url, impersonate="chrome124", timeout=15)
         resp.raise_for_status()
     except Exception as e:
         print(f'  Fetch error: {e}')
