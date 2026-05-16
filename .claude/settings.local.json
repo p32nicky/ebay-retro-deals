@@ -20,7 +20,9 @@
       "Bash(pip install *)",
       "Bash(python -c \"from curl_cffi import requests; r = requests.get\\('https://www.ebay.com/sch/i.html?_nkw=NES+game&LH_BIN=1&_udhi=40', impersonate='chrome124', timeout=15\\); print\\(r.status_code\\); print\\('s-item' in r.text\\)\")",
       "Bash(playwright install *)",
-      "PowerShell(python -m playwright install chromium 2>&1)"
+      "PowerShell(python -m playwright install chromium 2>&1)",
+      "PowerShell($env:SCRAPER_API_KEY=\"c45c5bf14a3e83fbd9c9c4210197fd6e\"; cd \"C:\\\\Users\\\\nickd\\\\OneDrive\\\\Desktop\\\\ebaygamedeals\"; python scraper.py)",
+      "Bash(git checkout *)"
     ]
   }
 }
