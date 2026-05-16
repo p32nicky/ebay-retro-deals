@@ -2,10 +2,21 @@ import re
 import time
 import requests
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from email.utils import parsedate_to_datetime
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom.minidom import parseString
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qs
+
+MAX_AGE_DAYS = 730
+
+RETRO_KEYWORDS = {
+    'nes', 'snes', 'n64', 'nintendo 64', 'ps1', 'ps2', 'playstation 1',
+    'playstation 2', 'sega genesis', 'sega saturn', 'dreamcast', 'game boy',
+    'gameboy', 'gba', 'game boy advance', 'nintendo ds', 'nds', '3ds',
+    'retro game', 'retro gaming', 'retro console', 'retro handheld',
+    'anbernic', 'famicom', 'super famicom', 'atari', 'turbografx',
+}
 
 AFFILIATE_PARAMS = {
     'mkcid': '1',
@@ -80,6 +91,19 @@ def fetch_slickdeals(query):
         pub   = item.findtext('pubDate', '')
 
         if 'ebay' not in title.lower() and 'ebay' not in desc.lower():
+            continue
+
+        # drop old deals
+        try:
+            age = datetime.now(timezone.utc) - parsedate_to_datetime(pub)
+            if age > timedelta(days=MAX_AGE_DAYS):
+                continue
+        except Exception:
+            pass
+
+        # must contain a retro gaming keyword
+        combined = (title + ' ' + desc).lower()
+        if not any(kw in combined for kw in RETRO_KEYWORDS):
             continue
 
         results.append({
