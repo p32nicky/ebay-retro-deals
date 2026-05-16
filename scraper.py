@@ -108,7 +108,7 @@ def build_rss(all_deals):
     SubElement(channel, 'lastBuildDate').text = pub_date
 
     for label, items in all_deals.items():
-        for deal in sorted(items, key=lambda x: x['price'])[:5]:
+        for deal in sorted(items, key=lambda x: x['price'])[:3]:
             el = SubElement(channel, 'item')
             SubElement(el, 'title').text       = f'[{label}] ${deal["price"]:.2f} — {deal["title"]}'
             SubElement(el, 'link').text        = deal['url']
