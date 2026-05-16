@@ -141,14 +141,10 @@ def main():
             all_deals[label] = items
         time.sleep(2)
 
-    if not all_deals:
-        print('No deals found')
-        return
-
     xml = build_rss(all_deals)
     with open('feed.xml', 'w', encoding='utf-8') as f:
         f.write(xml)
-    print('Wrote feed.xml')
+    print(f'Wrote feed.xml with {sum(len(v) for v in all_deals.values())} items')
 
 
 if __name__ == '__main__':
