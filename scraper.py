@@ -64,9 +64,12 @@ def scrape_ebay(keyword, max_price):
         return []
 
     soup = BeautifulSoup(resp.text, 'html.parser')
+    raw_items = soup.select('li.s-item')
+    print(f'  Raw HTML snippet: {resp.text[:300]}')
+    print(f'  li.s-item count: {len(raw_items)}')
     results = []
 
-    for item in soup.select('li.s-item'):
+    for item in raw_items:
         try:
             title_el = item.select_one('.s-item__title')
             price_el = item.select_one('.s-item__price')
