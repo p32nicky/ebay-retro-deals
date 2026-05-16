@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import requests
 from datetime import datetime, timezone
@@ -6,6 +7,9 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom.minidom import parseString
 from urllib.parse import urlencode, urlparse, urlunparse
 from bs4 import BeautifulSoup
+
+SEEN_FILE = 'seen_ids.json'
+MAX_FEED_ITEMS = 50  # cap total items in feed
 
 SCRAPER_API_KEY = os.environ['SCRAPER_API_KEY']
 
@@ -122,20 +126,52 @@ def build_rss(all_deals):
     return parseString(tostring(rss, encoding='unicode')).toprettyxml(indent='  ')
 
 
+def load_seen():
+    if os.path.exists(SEEN_FILE):
+        with open(SEEN_FILE) as f:
+            return set(json.load(f))
+    return set()
+
+
+def save_seen(seen):
+    with open(SEEN_FILE, 'w') as f:
+        json.dump(list(seen), f)
+
+
 def main():
+    seen = load_seen()
     all_deals = {}
+    new_ids = set()
+
     for label, keyword, max_price in SEARCHES:
         print(f'Searching {label}...')
         items = scrape_ebay(keyword, max_price)
-        print(f'  {len(items)} items found')
-        if items:
-            all_deals[label] = items
+
+        # only keep items we haven't seen before
+        fresh = [i for i in items if i['url'] not in seen]
+        print(f'  {len(items)} found, {len(fresh)} new')
+
+        if fresh:
+            all_deals[label] = fresh
+            for i in fresh:
+                new_ids.add(i['url'])
         time.sleep(1)
 
+    total_new = sum(len(v) for v in all_deals.values())
+    print(f'{total_new} new deals today')
+
+    if total_new == 0:
+        print('Nothing new — feed unchanged')
+        return
+
+    # merge new deals into existing feed (keep last MAX_FEED_ITEMS)
     xml = build_rss(all_deals)
     with open('feed.xml', 'w', encoding='utf-8') as f:
         f.write(xml)
-    print(f'Done — {sum(len(v) for v in all_deals.values())} total deals written to feed.xml')
+
+    seen.update(new_ids)
+    save_seen(seen)
+    print(f'Done — {total_new} new deals written, {len(seen)} total seen')
 
 
 if __name__ == '__main__':
