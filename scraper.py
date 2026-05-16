@@ -64,17 +64,17 @@ def scrape_ebay(keyword, max_price):
     soup = BeautifulSoup(resp.text, 'html.parser')
     results = []
 
-    for item in soup.select('li.s-item'):
+    for item in soup.select('li.s-card'):
         try:
-            title_el = item.select_one('.s-item__title')
-            price_el = item.select_one('.s-item__price')
-            link_el  = item.select_one('a.s-item__link')
-            cond_el  = item.select_one('.SECONDARY_INFO')
+            title_el = item.select_one('.s-card__title')
+            price_el = item.select_one('[class*=price]')
+            link_el  = item.find('a', href=lambda h: h and 'ebay.com/itm/' in h and '123456' not in h)
+            cond_el  = item.select_one('[class*=condition], [class*=SECONDARY]')
 
             if not (title_el and price_el and link_el):
                 continue
-            title = title_el.get_text(strip=True)
-            if title.lower() == 'shop on ebay':
+            title = title_el.get_text(strip=True).replace('Opens in a new window or tab', '').strip()
+            if not title or title.lower() == 'shop on ebay':
                 continue
 
             price_text = price_el.get_text(strip=True).replace(',', '').split(' to ')[0]
