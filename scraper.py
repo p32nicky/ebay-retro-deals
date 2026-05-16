@@ -1,5 +1,5 @@
 import time
-from curl_cffi import requests
+import requests
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from xml.etree.ElementTree import Element, SubElement, tostring
@@ -16,7 +16,15 @@ AFFILIATE_PARAMS = {
     'mkevt': '1',
 }
 
-# (label, search keyword, max price USD)
+HEADERS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/124.0.0.0 Safari/537.36'
+    ),
+    'Accept-Language': 'en-US,en;q=0.9',
+}
+
 SEARCHES = [
     ('NES',          'NES game cartridge',       40),
     ('SNES',         'SNES game cartridge',       45),
@@ -41,35 +49,31 @@ def make_affiliate_link(url):
 def scrape_ebay(keyword, max_price):
     params = {
         '_nkw': keyword,
-        '_sop': '10',       # sort: newly listed
-        'LH_BIN': '1',      # Buy It Now only
+        '_sop': '10',
+        'LH_BIN': '1',
         '_udhi': str(max_price),
     }
     url = 'https://www.ebay.com/sch/i.html?' + urlencode(params)
 
     try:
-        resp = requests.get(url, impersonate="chrome124", timeout=15)
+        resp = requests.get(url, headers=HEADERS, timeout=15)
         resp.raise_for_status()
     except Exception as e:
-        print(f'  Fetch error: {e}')
+        print(f'  Error: {e}')
         return []
 
     soup = BeautifulSoup(resp.text, 'html.parser')
-    raw_items = soup.select('li.s-item')
-    print(f'  Raw HTML snippet: {resp.text[:300]}')
-    print(f'  li.s-item count: {len(raw_items)}')
     results = []
 
-    for item in raw_items:
+    for item in soup.select('li.s-item'):
         try:
             title_el = item.select_one('.s-item__title')
             price_el = item.select_one('.s-item__price')
-            link_el = item.select_one('a.s-item__link')
-            cond_el = item.select_one('.SECONDARY_INFO')
+            link_el  = item.select_one('a.s-item__link')
+            cond_el  = item.select_one('.SECONDARY_INFO')
 
             if not (title_el and price_el and link_el):
                 continue
-
             title = title_el.get_text(strip=True)
             if title.lower() == 'shop on ebay':
                 continue
@@ -77,13 +81,13 @@ def scrape_ebay(keyword, max_price):
             price_text = price_el.get_text(strip=True).replace(',', '').split(' to ')[0]
             price = float(''.join(c for c in price_text if c.isdigit() or c == '.'))
 
-            raw_url = link_el['href'].split('?')[0]
+            raw_url   = link_el['href'].split('?')[0]
             condition = cond_el.get_text(strip=True) if cond_el else 'Used'
 
             results.append({
-                'title': title[:100],
-                'price': price,
-                'url': make_affiliate_link(raw_url),
+                'title':     title[:100],
+                'price':     price,
+                'url':       make_affiliate_link(raw_url),
                 'condition': condition,
             })
         except Exception:
@@ -93,36 +97,30 @@ def scrape_ebay(keyword, max_price):
 
 
 def build_rss(all_deals):
-    now = datetime.now(timezone.utc)
+    now      = datetime.now(timezone.utc)
     pub_date = now.strftime('%a, %d %b %Y %H:%M:%S +0000')
 
-    rss = Element('rss', version='2.0')
+    rss     = Element('rss', version='2.0')
     channel = SubElement(rss, 'channel')
-
-    SubElement(channel, 'title').text = 'Retro Gaming eBay Deals'
-    SubElement(channel, 'link').text = 'https://www.ebay.com'
-    SubElement(channel, 'description').text = (
-        'Daily retro gaming deals scraped from eBay with affiliate links'
-    )
-    SubElement(channel, 'language').text = 'en-us'
+    SubElement(channel, 'title').text       = 'Retro Gaming eBay Deals'
+    SubElement(channel, 'link').text        = 'https://www.ebay.com'
+    SubElement(channel, 'description').text = 'Daily retro gaming deals from eBay with affiliate links'
+    SubElement(channel, 'language').text    = 'en-us'
     SubElement(channel, 'lastBuildDate').text = pub_date
 
     for label, items in all_deals.items():
         for deal in sorted(items, key=lambda x: x['price'])[:5]:
-            item_el = SubElement(channel, 'item')
-            SubElement(item_el, 'title').text = (
-                f'[{label}] ${deal["price"]:.2f} — {deal["title"]}'
-            )
-            SubElement(item_el, 'link').text = deal['url']
-            SubElement(item_el, 'guid', isPermaLink='true').text = deal['url']
-            SubElement(item_el, 'pubDate').text = pub_date
-            SubElement(item_el, 'description').text = (
+            el = SubElement(channel, 'item')
+            SubElement(el, 'title').text       = f'[{label}] ${deal["price"]:.2f} — {deal["title"]}'
+            SubElement(el, 'link').text        = deal['url']
+            SubElement(el, 'guid', isPermaLink='true').text = deal['url']
+            SubElement(el, 'pubDate').text     = pub_date
+            SubElement(el, 'description').text = (
                 f'<b>${deal["price"]:.2f}</b> | {deal["condition"]}<br/>'
                 f'<a href="{deal["url"]}">{deal["title"]}</a>'
             )
 
-    xml_str = tostring(rss, encoding='unicode')
-    return parseString(xml_str).toprettyxml(indent='  ')
+    return parseString(tostring(rss, encoding='unicode')).toprettyxml(indent='  ')
 
 
 def main():
@@ -130,7 +128,7 @@ def main():
     for label, keyword, max_price in SEARCHES:
         print(f'Searching {label}...')
         items = scrape_ebay(keyword, max_price)
-        print(f'  Found {len(items)} items')
+        print(f'  {len(items)} items found')
         if items:
             all_deals[label] = items
         time.sleep(2)
@@ -138,7 +136,7 @@ def main():
     xml = build_rss(all_deals)
     with open('feed.xml', 'w', encoding='utf-8') as f:
         f.write(xml)
-    print(f'Wrote feed.xml with {sum(len(v) for v in all_deals.values())} items')
+    print(f'Done — {sum(len(v) for v in all_deals.values())} total deals written to feed.xml')
 
 
 if __name__ == '__main__':
